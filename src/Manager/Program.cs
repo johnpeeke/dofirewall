@@ -1,45 +1,42 @@
 ﻿using System.Net.Http.Json;
-using System.Text.Json.Serialization;
+using Microsoft.Extensions.Configuration;
+
+var builder = new ConfigurationBuilder();
+builder.AddCommandLine(args);
+
+var config = builder.Build();
+
+var apiToken = config["apiToken"] ?? throw new Exception("apiToken is required.");
+var ipList = config["ipList"] ?? throw new Exception("ipList is required.");
+var firewallId = config["firewallId"] ?? throw new Exception("firewallId is required.");
 
 var client = new HttpClient();
 client.BaseAddress = new Uri("https://api.digitalocean.com/");
-client.DefaultRequestHeaders.Add("Authorization", $"Bearer {args[0]}");
+client.DefaultRequestHeaders.Add("Authorization", $"Bearer {apiToken}");
 client.DefaultRequestHeaders.Add("ContentType", "application/json");
 
-var sources = new Sources();
-sources.CidrAddress = (await File.ReadAllLinesAsync("addresses.txt")).ToList();
+var request = await CreateFirewallRulesRequestAsync();
 
-var inboundRule = new InboundRule();
-inboundRule.Protocol = "tcp";
-inboundRule.Ports = "80";
-inboundRule.Sources = sources;
+client.PostAsJsonAsync($"v2/firewalls/{firewallId}/rules", request).Result.EnsureSuccessStatusCode();
 
-var root = new Root();
-root.InboundRules = new List<InboundRule>();
-root.InboundRules.Add(inboundRule);
-
-client.PostAsJsonAsync($"v2/firewalls/{args[1]}/rules", root).Result.EnsureSuccessStatusCode();
-
-public class Root
+async Task<Root> CreateFirewallRulesRequestAsync()
 {
-    [JsonPropertyName("inbound_rules")]
-    public List<InboundRule> InboundRules { get; set; }
-}
+    var sources = new Sources
+    {
+        CidrAddress = (await File.ReadAllLinesAsync(ipList)).ToList()
+    };
 
-public class InboundRule
-{
-    [JsonPropertyName("protocol")]
-    public string Protocol { get; set; }
+    var inboundRule = new InboundRule
+    {
+        Protocol = "tcp",
+        Ports = "80",
+        Sources = sources
+    };
 
-    [JsonPropertyName("ports")]
-    public string Ports { get; set; }
+    var root = new Root
+    {
+        InboundRules = new List<InboundRule> {inboundRule}
+    };
 
-    [JsonPropertyName("sources")]
-    public Sources Sources { get; set; }
-}
-
-public class Sources
-{
-    [JsonPropertyName("addresses")]
-    public List<string> CidrAddress { get; set; }
+    return root;
 }
